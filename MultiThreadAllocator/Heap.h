@@ -184,7 +184,7 @@ public:
 			}
 			else {
 				lock2.unlock();
-				SuperBlock newBlock(superBlockSize, size(lineIndex), this);
+				SuperBlock newBlock(size(lineIndex), this);
 				allocatedSize += superBlockSize;
 				usedSize += newBlock.blockSize;
 				ptr = newBlock.SbMalloc(bytes);
