@@ -2,7 +2,7 @@
 #include <iostream>
 #include <random>
 #include <time.h>
-#include "CHoardAllocator.h"
+#include "mtallocator.cpp"
 
 struct TestOptions {
 	TestOptions(size_t t, size_t n, size_t i) : threadsCount(t),
@@ -12,18 +12,8 @@ struct TestOptions {
 	size_t items;
 };
 
-struct AllocatorParams {
-	AllocatorParams(size_t sbSize, double f, size_t k) : sbSize(sbSize),
-		f(f), k(k) {}
-	size_t sbSize;
-	double f;
-	size_t k;
-};
-
-void runTest(const TestOptions& options, const AllocatorParams& params, const std::vector<size_t>& itemsSizes)
+void runTest(const TestOptions& options, const std::vector<size_t>& itemsSizes)
 {
-	CHoardAllocator H;
-	std::cout << "sbSize = " << params.sbSize << ", f = " << params.f << ", k = " << params.k << std::endl;
 	clock_t t = clock();
 
 	float avgGlobalMalloc = 0, avgGlobalFree = 0;
@@ -36,7 +26,7 @@ void runTest(const TestOptions& options, const AllocatorParams& params, const st
 				size_t k = 0;
 			}
 			//std::cout << i << j << std::endl;
-			items.push_back((char*)H.mtalloc(itemsSizes[j]));
+			items.push_back((char*)mtalloc(itemsSizes[j]));
 		}
 		//std::cout << "got here";
 		avgGlobalMalloc += ((float)clock() - t2) / CLOCKS_PER_SEC / options.numIterations;
@@ -47,7 +37,7 @@ void runTest(const TestOptions& options, const AllocatorParams& params, const st
 				size_t k = 0;
 			}
 			std::cout << j << std::endl;
-			H.mtfree(items[j]);
+			mtfree(items[j]);
 		}
 		avgGlobalFree += ((float)clock() - t2) / CLOCKS_PER_SEC / options.numIterations;
 		// std::cout << "Free time: " << ((float)clock() - t2) / CLOCKS_PER_SEC << std::endl;
@@ -71,7 +61,6 @@ void showResults(const TestOptions& options)
 	}
 
 	for (size_t k = 0; k < 5; k++) {
-		AllocatorParams p(pow(2, 16), 0.5, 50);
-		runTest(options, p, itemsSize);
+		runTest(options, itemsSize);
 	}
 }

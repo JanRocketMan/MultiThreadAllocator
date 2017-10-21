@@ -1,273 +1,166 @@
 #pragma once
-#include "SuperBlock.h"
-#include <algorithm>
-#include <cassert>
-#include <list>
-#include <memory>
-#include <vector>
+#include "Bin.h"
+#include <array>
+#include <mutex>
 
-SuperBlock* getOwner(void* ptr)
+const float f = 0.25;
+const int K = 10;
+const int Nbins = 10;
+
+SuperBlock* GetOwnerOfBlock(void* ptr)
 {
-	return reinterpret_cast<SuperBlock::StoreInfo*>((char*)ptr - sizeof(SuperBlock::StoreInfo))->owner;
+	SuperBlock::StoreInfo info;
+	memcpy(&info, (char*)ptr - sizeof(SuperBlock::StoreInfo), sizeof(SuperBlock::StoreInfo));
+	return info.owner;
 }
-
-enum type { full, ffull, fempty };
-
-struct GetResult {
-	GetResult(SuperBlock* bl, type factor) : block(bl), fillFactor(factor) {}
-	SuperBlock* block;
-	type fillFactor;
-};
-
-class TableLine {
-public:
-	TableLine() = delete;
-	TableLine(float f, size_t blSize, size_t sbSize) :
-		f(f), blockSize(blSize), superBlockSize(sbSize) {}
-	~TableLine()
-	{
-		for (auto it = fFull.begin(); it != fFull.end(); it++) {
-			it->Clear();
-		}
-		for (auto it = Full.begin(); it != Full.end(); it++) {
-			it->Clear();
-		}
-		for (auto it = fEmpty.begin(); it != fEmpty.end(); it++) {
-			it->Clear();
-		}
-	}
-
-	GetResult GetFirstEmpty()
-	{
-		if (!fFull.empty()) {
-			return GetResult(&fFull.front(), ffull);
-		}
-		else if (!fEmpty.empty()) {
-			return GetResult(&fEmpty.front(), fempty);
-		}
-		else {
-			return GetResult(nullptr, fempty);
-		}
-	}
-
-	void UpdateSuperBlock(GetResult& res)
-	{
-		SuperBlock block = *res.block;
-		if (res.fillFactor == ffull) {
-			if (block.usedSize + blockSize > superBlockSize) {
-				fFull.pop_front();
-				Full.push_front(block);
-			}
-			else if (block.usedSize <= (float)(1 - f) * superBlockSize) {
-				fFull.pop_front();
-				fEmpty.push_front(block);
-			}
-		}
-		else if (res.fillFactor == fempty) {
-			if (block.usedSize > (float)(1 - f) * superBlockSize) {
-				fEmpty.pop_front();
-				fFull.push_front(block);
-			}
-		}
-		else if (res.fillFactor == full) {
-			Full.pop_front();
-			fFull.push_front(block);
-		}
-	}
-
-	void FindSuperBlockAndUpdate(SuperBlock* blockToFind)
-	{
-		GetResult res(blockToFind, fempty);
-		if (blockToFind->usedSize + 2 * blockSize > superBlockSize) {
-			res.fillFactor = full;
-		}
-		else if (blockToFind->usedSize + blockSize > (float)(1 - f) * superBlockSize) {
-			res.fillFactor = ffull;
-		}
-		if (res.fillFactor == full) {
-			std::swap(*Full.begin(), *blockToFind);
-		}
-		else if (res.fillFactor == ffull) {
-			std::swap(*fFull.begin(), *blockToFind);
-		}
-		else if (res.fillFactor == fempty) {
-			std::swap(*fEmpty.begin(), *blockToFind);
-		}
-		UpdateSuperBlock(res);
-	}
-
-	void AddSuperBlock(SuperBlock blToAdd, type type)
-	{
-		if (type == fempty) {
-			fEmpty.push_front(blToAdd);
-		}
-		else if (type == ffull) {
-			fFull.push_front(blToAdd);
-		}
-	}
-
-	void PopSuperBlock(type type)
-	{
-		if (type == fempty) {
-			fEmpty.pop_front();
-		}
-		else if (type == ffull) {
-			fFull.pop_front();
-		}
-	}
-
-	SuperBlock PopfEmpty()
-	{
-		SuperBlock ans = fEmpty.front();
-		fEmpty.pop_front();
-		return ans;
-	}
-
-	size_t GetFEmptySize()
-	{
-		return fEmpty.size();
-	}
-
-	float const f;
-	size_t const blockSize;
-	size_t const superBlockSize;
-private:
-	std::list<SuperBlock> Full;
-	std::list<SuperBlock> fFull; // usedSize > (1 - f) * superBlockSize
-	std::list<SuperBlock> fEmpty; // usedSize <= (1 - f) * superBlockSize
-};
 
 class Heap {
 public:
-	Heap() = delete;
-	Heap(size_t const superBlockSize, double const f, size_t const k) :
-		usedSize(0), allocatedSize(0), superBlockSize(superBlockSize), f(f),
-		k(k)
-	{
-		for (size_t i = 0; i < 20; i++) {
-			table.emplace_back(f, size(i), superBlockSize);
+	Heap() : usedSize(0), allocatedSize(0), emptyBlock(nullptr) {}
+	~Heap() {
+		for (size_t k = 0; k < Nbins; k++) {
+			Bins[k].ClearBin();
 		}
+		clearEmpty();
 	}
-	~Heap() = default;
 
 	void* HeapMalloc(size_t bytes, std::shared_ptr<Heap> zeroHeap)
 	{
 		void* ptr = nullptr;
-		size_t lineIndex = hash(bytes);
+		size_t currindex = index(bytes);
 
 		std::unique_lock<std::mutex> lock(mtx);
 
-		GetResult res = table[lineIndex].GetFirstEmpty();
+		SuperBlock* newSbck = Bins[currindex].getFirstForMalloc();
 
-		if (res.block != nullptr) {
-			usedSize += table[lineIndex].blockSize;
-			ptr = res.block->SbMalloc(bytes);
-			table[lineIndex].UpdateSuperBlock(res);
-		}
-		else {
-			std::unique_lock<std::mutex> lock2(zeroHeap->mtx);
-			res = zeroHeap->table[lineIndex].GetFirstEmpty();
-			if (res.block != nullptr) {
-				zeroHeap->usedSize -= res.block->usedSize;
-				zeroHeap->allocatedSize -= superBlockSize;
-				SuperBlock bl = *res.block;
-				zeroHeap->table[lineIndex].PopSuperBlock(res.fillFactor);
-				res.block->owner = this;
-
-				lock2.unlock();
-
-				usedSize += res.block->usedSize + table[lineIndex].blockSize;
-				allocatedSize += superBlockSize;
-
-				ptr = res.block->SbMalloc(bytes);
-				table[lineIndex].AddSuperBlock(bl, res.fillFactor);
+		if (newSbck == nullptr) {
+			if (emptyBlock != nullptr) {
+				newSbck = popfromempty();
+				newSbck->ChangeBlockSize(size(currindex));
 			}
 			else {
-				lock2.unlock();
-				SuperBlock newBlock(size(lineIndex), this);
-				allocatedSize += superBlockSize;
-				usedSize += newBlock.blockSize;
-				ptr = newBlock.SbMalloc(bytes);
-				table[lineIndex].AddSuperBlock(newBlock, fempty);
+				newSbck = zeroHeap->SendBlock(currindex);
+				if (newSbck != nullptr) {
+					usedSize += newSbck->usedSize;
+				}
+				else {
+					newSbck = new SuperBlock(size(currindex), this);
+				}
+				allocatedSize += SuperBlockSize;
 			}
+			Bins[currindex].push(newSbck, true);
+			newSbck->owner = this;
 		}
+
+		usedSize += size(currindex);
+		ptr = newSbck->SbMalloc(bytes);
 
 		return ptr;
 	}
 
 	bool HeapFree(void* ptr, std::shared_ptr<Heap> zeroHeap)
 	{
-		SuperBlock* block = getOwner(ptr);
+		SuperBlock* block = GetOwnerOfBlock(ptr);
 		std::unique_lock<std::mutex> lock(mtx);
 		if (block->owner != this) {
 			return false;
 		}
-		size_t lineIndex = hash(block->blockSize);
+		size_t currindex = index(block->blockSize);
 		usedSize -= block->blockSize;
+		assert(usedSize >= 0);
 		block->SbFree(ptr);
-		table[lineIndex].FindSuperBlockAndUpdate(block);
+		Bins[currindex].update(block);
 
-		if (this != zeroHeap.get() && (usedSize + (int)(k * superBlockSize) < allocatedSize) &&
-			(usedSize < (int)((double)(1 - f) * allocatedSize))) {
-			DropToZeroHeap(zeroHeap);
+		if ((usedSize + K * SuperBlockSize < allocatedSize) && (usedSize < (int)((float)(1 - f)*allocatedSize))) {
+			SuperBlock* to_send = SendBlock(currindex);
+			assert(to_send != nullptr);
+			zeroHeap->ReceiveBlock(to_send, currindex);
 		}
 
-		assert(usedSize >= 0);
 		return true;
 	}
 
-private:
-	void DropToZeroHeap(std::shared_ptr<Heap> zeroHeap)
-	{
-		for (size_t i = 0; i < 20; i++) {
-			if (usedSize >= (int)((double)(1 - f) * allocatedSize)
-				|| usedSize + (int)(k * superBlockSize) < allocatedSize) {
-				break;
-			}
-
-			size_t k = table[i].GetFEmptySize();
-
-			for (size_t j = 0; j < k; j++) {
-
-				if (usedSize >= (int)((double)(1 - f) * allocatedSize)
-					|| usedSize + (int)(k * superBlockSize) < allocatedSize) {
-					break;
+	SuperBlock* SendBlock(size_t binIndex) {
+		std::unique_lock<std::mutex> lock(mtx);
+		SuperBlock* ans = nullptr;
+		ans = popfromempty();
+		if (ans == nullptr) {
+			ans = Bins[binIndex].pop(2);
+			if (ans == nullptr) {
+				ans = Bins[binIndex].pop(1);
+				if (ans == nullptr) {
+					ans = Bins[binIndex].pop(0);
 				}
-
-				SuperBlock block = table[i].PopfEmpty();
-
-				usedSize -= block.usedSize;
-				allocatedSize -= superBlockSize;
-
-				std::unique_lock<std::mutex> lock2(zeroHeap->mtx);
-				block.owner = zeroHeap.get();
-				zeroHeap->table[i].AddSuperBlock(block, fempty);
-				zeroHeap->usedSize += block.usedSize;
-				zeroHeap->allocatedSize += superBlockSize;
 			}
 		}
-	}
-
-	size_t hash(int size)
-	{
-		size_t ans = 0;
-		if (size > floor(pow(1.5, 6))) {
-			ans = ceil(log(size) / log(1.5)) - 6;
+		if (ans != nullptr) {
+			usedSize -= ans->usedSize;
+			allocatedSize -= SuperBlockSize;
 		}
 		return ans;
 	}
 
-	size_t size(size_t index)
-	{
-		return floor(pow(1.5, index + 6));
+	void ReceiveBlock(SuperBlock* newblock, size_t binIndex) {
+		std::unique_lock<std::mutex> lock(mtx);
+		if (newblock->usedSize != 0) {
+			Bins[binIndex].push(newblock, false);
+		}
+		else {
+			pushtoempty(newblock);
+		}
+
+		usedSize += newblock->usedSize;
+		allocatedSize += SuperBlockSize;
+		newblock->owner = this;
 	}
 
-	std::vector<TableLine> table;
+private:
+
+	void clearEmpty() {
+		SuperBlock* temp = emptyBlock;
+		while (temp != nullptr) {
+			temp = temp->next;
+			if (temp != nullptr) {
+				delete temp->prev;
+			}
+		}
+	}
+
+	void pushtoempty(SuperBlock* newblock) {
+		if (emptyBlock != nullptr) {
+			emptyBlock->prev = newblock;
+		}
+		newblock->next = emptyBlock;
+		newblock->prev = nullptr;
+		emptyBlock = newblock;
+	}
+
+	SuperBlock* popfromempty() {
+		SuperBlock* ans = emptyBlock;
+		if (ans != nullptr) {
+			emptyBlock = ans->next;
+			if (emptyBlock != nullptr) {
+				emptyBlock->prev = nullptr;
+			}
+		}
+		return ans;
+	}
+
+	size_t index(int bytes)
+	{
+		assert(bytes > 8);
+		return (size_t) ceil(log2(bytes) - 4);
+	}
+
+	size_t size(size_t index)
+	{
+		return (size_t) pow(2, index + 4);
+	}
+
+	std::array<Bin, Nbins> Bins;
+	SuperBlock* emptyBlock;
 
 	int usedSize;
 	int allocatedSize;
-	size_t const superBlockSize;
-	float const f;
-	size_t const k;
 	std::mutex mtx;
 };

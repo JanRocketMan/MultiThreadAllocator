@@ -110,6 +110,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Bin.h" />
     <ClInclude Include="CChunk.h" />
     <ClInclude Include="CHoardAllocator.h" />
     <ClInclude Include="CMemoryTable.h" />

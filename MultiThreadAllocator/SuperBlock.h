@@ -2,9 +2,9 @@
 #include <cassert>
 #include <cmath>
 
-extern class Heap;
+class Heap;
 
-const size_t SuperBlockSize = pow(2, 14); // size in Bytes
+const size_t SuperBlockSize = (size_t) pow(2, 14); // size in Bytes
 
 class SuperBlock {
 public:
@@ -17,9 +17,9 @@ public:
 	};
 
 	SuperBlock(size_t _blockSize, Heap* owner) :
-		usedSize(0), blockSize(_blockSize + sizeof(StoreInfo)), owner(owner)
+		usedSize(0), blockSize(_blockSize), owner(owner)
 	{
-		nBlocks = floor(SuperBlockSize / blockSize);
+		nBlocks = (size_t) floor(SuperBlockSize / blockSize);
 		begin = (char*)malloc(SuperBlockSize);
 		markupMemory();
 	}
@@ -29,8 +29,8 @@ public:
 	void ChangeBlockSize(size_t newBlocksize)
 	{
 		assert(usedSize == 0);
-		blockSize = newBlocksize + sizeof(StoreInfo);
-		nBlocks = floor(SuperBlockSize / blockSize);
+		blockSize = newBlocksize;
+		nBlocks = (size_t) floor(SuperBlockSize / blockSize);
 		assert(freeBlock == begin + sizeof(StoreInfo));
 		markupMemory();
 	}
@@ -47,7 +47,7 @@ public:
 
 	void* SbMalloc(size_t bytes)
 	{
-		assert(bytes <= blockSize - sizeof(StoreInfo));
+		assert(bytes <= blockSize);
 		assert(usedSize + blockSize <= SuperBlockSize);
 
 		usedSize += blockSize;
