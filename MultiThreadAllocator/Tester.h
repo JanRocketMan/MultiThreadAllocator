@@ -36,7 +36,7 @@ void runTest(const TestOptions& options, const std::vector<size_t>& itemsSizes)
 			if (j == 3) {
 				size_t k = 0;
 			}
-			std::cout << j << std::endl;
+			//std::cout << j << std::endl;
 			mtfree(items[j]);
 		}
 		avgGlobalFree += ((float)clock() - t2) / CLOCKS_PER_SEC / options.numIterations;

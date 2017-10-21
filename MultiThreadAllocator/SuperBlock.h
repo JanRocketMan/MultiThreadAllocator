@@ -4,7 +4,7 @@
 
 class Heap;
 
-const size_t SuperBlockSize = (size_t) pow(2, 14); // size in Bytes
+const size_t SuperBlockSize = (int) pow(2, 14); // size in Bytes
 
 class SuperBlock {
 public:
@@ -21,6 +21,8 @@ public:
 	{
 		nBlocks = (size_t) floor(SuperBlockSize / blockSize);
 		begin = (char*)malloc(SuperBlockSize);
+		next = nullptr;
+		prev = nullptr;
 		markupMemory();
 	}
 

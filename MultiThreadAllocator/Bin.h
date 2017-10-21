@@ -12,7 +12,16 @@ public:
 		}
 	}
 	~Bin() {
-		ClearBin();
+		for (size_t i = 0; i < 4; i++) {
+			SuperBlock* temp = densityType[i];
+			while (temp != nullptr) {
+				assert(temp != temp->next);
+				temp = temp->next;
+				if (temp != nullptr && temp->prev != nullptr) {
+					delete temp->prev;
+				}
+			}
+		}
 	}
 	SuperBlock* getFirstForMalloc() {
 		SuperBlock* ans = nullptr;
@@ -30,6 +39,8 @@ public:
 		SuperBlock* ans = densityType[index];
 		if (ans != nullptr) {
 			densityType[index] = ans->next;
+			ans->prev = nullptr;
+			ans->next = nullptr;
 		}
 		if (densityType[index] != nullptr) {
 			densityType[index]->prev = nullptr;
@@ -47,7 +58,7 @@ public:
 		densityType[j] = newblock;
 	}
 
-	void update(SuperBlock* toUpdate) {
+	SuperBlock* update(SuperBlock* toUpdate) {
 		bool canFind = findAndPop(3, toUpdate);
 		if (!canFind) {
 			canFind = findAndPop(0, toUpdate);
@@ -59,20 +70,17 @@ public:
 			canFind = findAndPop(2, toUpdate);
 		}
 		assert(canFind);
-		push(toUpdate, false);
-	}
-
-	void ClearBin() {
-		for (size_t i = 0; i < 4; i++) {
-			SuperBlock* temp = densityType[i];
-			while (temp != nullptr) {
-				temp = temp->next;
-				if (temp != nullptr) {
-					delete temp->prev;
-				}
-			}
+		if (toUpdate->usedSize < toUpdate->blockSize) {
+			toUpdate->next = nullptr;
+			toUpdate->prev = nullptr;
+			return toUpdate;
+		}
+		else {
+			push(toUpdate, false);
+			return nullptr;
 		}
 	}
+
 private:
 	size_t getIndexForSbck(SuperBlock* sbck, bool nextIsMalloc) {
 		float f = 0;
@@ -94,6 +102,7 @@ private:
 		}
 		else return 2;
 	}
+
 	bool findAndPop(size_t index, SuperBlock* toFind) {
 		SuperBlock* ans = densityType[index];
 		while (ans != nullptr && ans != toFind) {
@@ -103,11 +112,13 @@ private:
 			return false;
 		}
 		if (ans->prev != nullptr) {
-			ans->prev->next = ans->next;
+			(ans->prev)->next = ans->next;
 		}
 		if (ans->next != nullptr) {
-			ans->next->prev = ans->prev;
+			(ans->next)->prev = ans->prev;
 		}
+		ans->prev = nullptr;
+		ans->next = nullptr;
 		return true;
 	}
 };

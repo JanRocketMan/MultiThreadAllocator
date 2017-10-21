@@ -29,8 +29,14 @@ public:
 	{
 		heaps.reserve(n);
 		for (size_t i = 0; i < n; i++) {
-			std::shared_ptr<Heap> ptr = std::make_shared<Heap>();
+			Heap* ptr = new Heap;
 			heaps.push_back(ptr);
+		}
+	}
+	
+	~HoardAllocator() {
+		for (size_t i = 0; i < n - 1; i++) {
+			delete heaps[i];
 		}
 	}
 
@@ -60,14 +66,13 @@ public:
 		}
 	}
 
-	~HoardAllocator() = default;
 private:
 	inline size_t hash(std::thread::id id)
 	{
 		return hasher(id) % (n - 1) + 1;
 	}
 
-	std::vector<std::shared_ptr<Heap>> heaps;
+	std::vector<Heap*> heaps;
 
 	size_t const n;
 

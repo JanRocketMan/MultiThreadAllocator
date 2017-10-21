@@ -4,8 +4,8 @@
 #include <mutex>
 
 const float f = 0.25;
-const int K = 10;
-const int Nbins = 10;
+const size_t K = 10;
+const size_t Nbins = 10;
 
 SuperBlock* GetOwnerOfBlock(void* ptr)
 {
@@ -18,13 +18,10 @@ class Heap {
 public:
 	Heap() : usedSize(0), allocatedSize(0), emptyBlock(nullptr) {}
 	~Heap() {
-		for (size_t k = 0; k < Nbins; k++) {
-			Bins[k].ClearBin();
-		}
 		clearEmpty();
 	}
 
-	void* HeapMalloc(size_t bytes, std::shared_ptr<Heap> zeroHeap)
+	void* HeapMalloc(size_t bytes, Heap* zeroHeap)
 	{
 		void* ptr = nullptr;
 		size_t currindex = index(bytes);
@@ -58,7 +55,7 @@ public:
 		return ptr;
 	}
 
-	bool HeapFree(void* ptr, std::shared_ptr<Heap> zeroHeap)
+	bool HeapFree(void* ptr, Heap* zeroHeap)
 	{
 		SuperBlock* block = GetOwnerOfBlock(ptr);
 		std::unique_lock<std::mutex> lock(mtx);
@@ -69,9 +66,12 @@ public:
 		usedSize -= block->blockSize;
 		assert(usedSize >= 0);
 		block->SbFree(ptr);
-		Bins[currindex].update(block);
+		SuperBlock* res = Bins[currindex].update(block);
+		if (res != nullptr) {
+			pushtoempty(res);
+		}
 
-		if ((usedSize + K * SuperBlockSize < allocatedSize) && (usedSize < (int)((float)(1 - f)*allocatedSize))) {
+		if ((usedSize + K * SuperBlockSize < allocatedSize) && (usedSize < (size_t)((float)(1 - f)*allocatedSize))) {
 			SuperBlock* to_send = SendBlock(currindex);
 			assert(to_send != nullptr);
 			zeroHeap->ReceiveBlock(to_send, currindex);
@@ -118,16 +118,22 @@ private:
 
 	void clearEmpty() {
 		SuperBlock* temp = emptyBlock;
+		if (temp != nullptr) {
+			temp->prev = nullptr;
+		}
 		while (temp != nullptr) {
+			assert(temp != temp->next);
 			temp = temp->next;
-			if (temp != nullptr) {
+			if (temp != nullptr && temp->prev != nullptr) {
 				delete temp->prev;
+				temp->prev = nullptr;
 			}
 		}
 	}
 
 	void pushtoempty(SuperBlock* newblock) {
 		if (emptyBlock != nullptr) {
+			assert(emptyBlock != newblock);
 			emptyBlock->prev = newblock;
 		}
 		newblock->next = emptyBlock;
@@ -142,6 +148,8 @@ private:
 			if (emptyBlock != nullptr) {
 				emptyBlock->prev = nullptr;
 			}
+			ans->next = nullptr;
+			ans->prev = nullptr;
 		}
 		return ans;
 	}
@@ -160,7 +168,7 @@ private:
 	std::array<Bin, Nbins> Bins;
 	SuperBlock* emptyBlock;
 
-	int usedSize;
-	int allocatedSize;
+	size_t usedSize;
+	size_t allocatedSize;
 	std::mutex mtx;
 };
