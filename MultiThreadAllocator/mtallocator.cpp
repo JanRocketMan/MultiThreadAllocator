@@ -11,8 +11,8 @@
 
 void* ReserveMemoryForBigBlock(size_t bytes)
 {
-	char* ptr = (char*)(malloc(bytes + sizeof(SuperBlock::StoreInfo)));
-	SuperBlock::StoreInfo info(nullptr, 0);
+	char* ptr = (char*)(malloc(bytes));
+	SuperBlock::StoreInfo info(nullptr);
 	memcpy(ptr, &info, sizeof(SuperBlock::StoreInfo));
 	return (void*)(ptr + sizeof(SuperBlock::StoreInfo));
 }
@@ -35,7 +35,7 @@ public:
 	}
 	
 	~HoardAllocator() {
-		for (size_t i = 0; i < n - 1; i++) {
+		for (size_t i = 0; i < n; i++) {
 			delete heaps[i];
 		}
 	}
@@ -57,7 +57,7 @@ public:
 			SuperBlock* owner = GetOwnerOfBlock(ptr);
 			if (owner != nullptr) {
 				while (!owner->owner->HeapFree(ptr, heaps[0])) {
-
+					continue;
 				}
 			}
 			else {
@@ -79,12 +79,12 @@ private:
 	std::hash<std::thread::id> hasher;
 };
 
-HoardAllocator hoardAllocator;
+HoardAllocator* hoardAllocator = new HoardAllocator();
 
 extern void* mtalloc(size_t bytes) {
-	return hoardAllocator.mtalloc(bytes);
+	return hoardAllocator->mtalloc(bytes);
 }
 
 extern void mtfree(void* ptr) {
-	hoardAllocator.mtfree(ptr);
+	hoardAllocator->mtfree(ptr);
 }

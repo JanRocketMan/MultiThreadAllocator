@@ -57,7 +57,7 @@ void showResults(const TestOptions& options)
 	std::minstd_rand0 randGen;
 	std::vector<size_t> itemsSize(options.items, 0);
 	for (size_t j = 0; j < options.items; j++) {
-		itemsSize[j] = (randGen() % 100) + 4;
+		itemsSize[j] = (randGen() % 10000) + 4;
 	}
 
 	for (size_t k = 0; k < 5; k++) {

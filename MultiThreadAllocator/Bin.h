@@ -14,12 +14,12 @@ public:
 	~Bin() {
 		for (size_t i = 0; i < 4; i++) {
 			SuperBlock* temp = densityType[i];
+			SuperBlock* temp2 = nullptr;
 			while (temp != nullptr) {
-				assert(temp != temp->next);
-				temp = temp->next;
-				if (temp != nullptr && temp->prev != nullptr) {
-					delete temp->prev;
-				}
+				temp2 = temp->next;
+				assert(temp2 != temp);
+				delete temp;
+				temp = temp2;
 			}
 		}
 	}
@@ -41,9 +41,9 @@ public:
 			densityType[index] = ans->next;
 			ans->prev = nullptr;
 			ans->next = nullptr;
-		}
-		if (densityType[index] != nullptr) {
-			densityType[index]->prev = nullptr;
+			if (densityType[index] != nullptr) {
+				densityType[index]->prev = nullptr;
+			}
 		}
 		return ans;
 	}
@@ -51,9 +51,10 @@ public:
 	void push(SuperBlock* newblock, bool nextIsMalloc) {
 		size_t j = getIndexForSbck(newblock, nextIsMalloc);
 		if (densityType[j] != nullptr) {
+			assert(densityType[j]->prev == nullptr);
 			densityType[j]->prev = newblock;
 		}
-		newblock->prev = nullptr;
+		assert(newblock->prev == nullptr && newblock->next == nullptr);
 		newblock->next = densityType[j];
 		densityType[j] = newblock;
 	}
@@ -105,6 +106,9 @@ private:
 
 	bool findAndPop(size_t index, SuperBlock* toFind) {
 		SuperBlock* ans = densityType[index];
+		if (ans == toFind) {
+			densityType[index] = ans->next;
+		}
 		while (ans != nullptr && ans != toFind) {
 			ans = ans->next;
 		}

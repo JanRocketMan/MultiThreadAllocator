@@ -1,16 +1,24 @@
 #pragma once
+#include <ctime>
 #include "Tester.h"
 #include "SuperBlock.h"
 
 int main() {
-	size_t threadsCount = 2;
-	size_t numIterations = 10000;
-	size_t items = 10;
+	clock_t time = clock();
+	size_t threadsCount = 1;
+	size_t numIterations = 4;
+	size_t items = 100000;
+	//unsigned rand_state = 60;
 	TestOptions t(threadsCount, numIterations, items);
 	showResults(t);
+	std::cout << "Work Time:" << ((float)clock() - time) / CLOCKS_PER_SEC << std::endl;
+	time = clock();
+	delete hoardAllocator;
+	std::cout << "Delete Time:" << ((float)clock() - time) / CLOCKS_PER_SEC << std::endl;
+
 	//std::cout << sizeof(SuperBlock::StoreInfo) << std::endl;
 	//std::cout << sizeof(char) << std::endl;
-	//std::cin >> items;
+	std::cin >> items;
 	//system("pause");
 	return 0;
 }
