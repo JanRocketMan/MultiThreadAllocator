@@ -1,15 +1,14 @@
 #pragma once
 #include "SuperBlock.h"
 #include "Heap.h"
-#include <cstring>
 #include <thread>
 
 void* ReserveMemoryForBigBlock(size_t bytes)
 {
 	char* ptr = (char*)(malloc(bytes));
-	StoreInfo info(nullptr);
-	memcpy(ptr, &info, AdditionalSize);
-	return (void*)(ptr + AdditionalSize);
+	ptr += AdditionalSize;
+	SetSbckOwner(ptr, nullptr);
+	return ptr;
 }
 
 void FreeMemoryForBigBlock(void* ptr)
@@ -51,8 +50,9 @@ public:
 		if (ptr != nullptr) {
 			SuperBlock* owner = GetOwnerOfBlock(ptr);
 			if (owner != nullptr) {
-				while (!owner->owner->HeapFree(ptr, heaps[0])) {
-					continue;
+				Heap* hOwner = owner->owner;
+				while (!hOwner->HeapFree(ptr, heaps[0])) {
+					hOwner = owner->owner;
 				}
 			}
 			else {

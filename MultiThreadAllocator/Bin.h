@@ -7,11 +7,11 @@ const float f = 0.5;
 
 class Bin {
 public:
-	std::array<std::vector<SuperBlock*>, 3> listsOfBlocks; 
+	std::array<std::vector<SuperBlock*>, 3> listsOfBlocks;
 	// 0 - density < f; 1 - density >= f; 2 - density == 1 
 	// density = usedSize / SuperBlockSize
 	Bin() = default;
-	~Bin() 
+	~Bin()
 	{
 		for (size_t i = 0; i < 3; i++) {
 			for (auto it = listsOfBlocks[i].begin(); it != listsOfBlocks[i].end(); it++) {
@@ -20,7 +20,7 @@ public:
 		}
 	}
 
-	SuperBlock* GetBlock() 
+	SuperBlock* GetBlock()
 	{
 		SuperBlock* ans = nullptr;
 		for (size_t i = 0; i < 2; i++) {
@@ -42,13 +42,18 @@ public:
 		push(getIndex(blockToAdd, forMalloc), blockToAdd);
 	}
 
-	void UpdateBlockAfterFree(SuperBlock* blockToUpdate) 
+	void UpdateBlockAfterFree(SuperBlock* blockToUpdate)
 	{
 		size_t i = getIndex(blockToUpdate, true);
 		bool res = pullOut(i, blockToUpdate);
-		assert(res);
-		SuperBlock* block = pop(i);
-		assert(block == blockToUpdate);
+		SuperBlock* block = nullptr;
+		if (res) {
+			block = pop(i);
+		}
+		else {
+			block = blockToUpdate;
+		}
+		//assert(block == blockToUpdate);
 		push(getIndex(block, false), block);
 	}
 
@@ -61,7 +66,7 @@ private:
 		else {
 			density = (float)(sbck->usedSize) / (float)SuperBlockSize;
 		}
-		
+
 		if (density < f) {
 			return 0;
 		}
@@ -99,3 +104,4 @@ private:
 		return false;
 	}
 };
+

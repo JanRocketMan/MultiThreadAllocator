@@ -44,6 +44,9 @@ void runTest(const TestOptions& options, const std::vector<size_t>& itemsSizes)
 	}
 	// std::cout << "Average init: " << avgInit << ", Average malloc: " << avgMalloc << ", Average free: " << avgFree << std::endl;
 	std::cout << "Average global malloc: " << avgGlobalMalloc << ", Average global free: " << avgGlobalFree << std::endl;
+	std::cout << "Part1 avg heap free: " << part1HeapFree / options.numIterations << std::endl;
+	std::cout << "Part2 avg heap free: " << part2HeapFree / options.numIterations << std::endl;
+	part1HeapFree = 0, part2HeapFree = 0;
 	std::cout << "Total time: " << ((float)clock() - t) / CLOCKS_PER_SEC << std::endl;
 }
 

@@ -3,19 +3,21 @@
 #include <numeric>
 #include <mutex>
 
-const size_t K = 5;
-const size_t Nbins = 11;
+static const size_t K = 5;
+static const size_t Nbins = 11;
 
-SuperBlock* GetOwnerOfBlock(void* ptr)
+static SuperBlock* GetOwnerOfBlock(void* ptr)
 {
-	StoreInfo info;
-	memcpy(&info, (char*)ptr - AdditionalSize, AdditionalSize);
-	return info.owner;
+	return ((SuperBlock **)ptr)[-1];
 }
 
 class Heap {
 public:
-	Heap() : usedSize(0), allocatedSize(0) {}
+	Heap() : usedSize(0), allocatedSize(0)
+	{
+		std::iota(randomIndexes.begin(), randomIndexes.end(), 0);
+		std::random_shuffle(randomIndexes.begin(), randomIndexes.end());
+	}
 	~Heap() = default;
 
 	void* HeapMalloc(size_t bytes, Heap* zeroHeap)
@@ -42,7 +44,7 @@ public:
 
 		Bins[currindex].AddBlock(newSbck, true);
 		usedSize += size(currindex);
-		ptr = newSbck->SbMalloc(bytes);
+		ptr = newSbck->SbMalloc();
 
 		return ptr;
 	}
@@ -54,11 +56,17 @@ public:
 		if (block->owner != this) {
 			return false;
 		}
+
 		size_t currindex = index(block->blockSize);
 		usedSize -= block->blockSize;
 		assert(usedSize >= 0);
 		block->SbFree(ptr);
+
 		Bins[currindex].UpdateBlockAfterFree(block);
+
+		if (this == zeroHeap) {
+			return true;
+		}
 
 		if ((usedSize + K * SuperBlockSize < allocatedSize) && (usedSize < (size_t)((float)(1 - f)*allocatedSize))) {
 			size_t i = 0;
@@ -66,11 +74,10 @@ public:
 			assert(to_send != nullptr);
 			zeroHeap->ReceiveBlock(to_send, i);
 		}
-
 		return true;
 	}
 
-	SuperBlock* SendBlock(size_t binIndex, Heap* where) 
+	SuperBlock* SendBlock(size_t binIndex, Heap* where)
 	{
 		std::unique_lock<std::recursive_mutex> lock(mtx);
 		SuperBlock* ans = Bins[binIndex].GetBlock();
@@ -85,13 +92,11 @@ public:
 	SuperBlock* SendSomeBlock(Heap* where, size_t* index)
 	{
 		SuperBlock* to_send = nullptr;
-		std::array<size_t, Nbins> randomIndexes;
-		std::iota(randomIndexes.begin(), randomIndexes.end(), 0);
-		std::random_shuffle(randomIndexes.begin(), randomIndexes.end());
 		for (size_t k = 0; k < Nbins; k++) {
 			to_send = Bins[randomIndexes[k]].GetBlock(0);
 			if (to_send != nullptr) {
 				*index = randomIndexes[k];
+				std::swap(randomIndexes[k], randomIndexes[Nbins - 1]);
 				break;
 			}
 		}
@@ -116,18 +121,19 @@ private:
 	size_t index(size_t bytes)
 	{
 		assert(bytes > AdditionalSize);
-		return (size_t) ceil(log2(bytes) - 3);
+		return (size_t)ceil(log2(bytes) - 3);
 	}
 
 	size_t size(size_t index)
 	{
 		assert(index < Nbins);
-		return (size_t) pow(2, index + 3);
+		return (size_t)pow(2, index + 3);
 	}
 
 	std::array<Bin, Nbins> Bins;
 
 	size_t usedSize;
 	size_t allocatedSize;
+	std::array<size_t, Nbins> randomIndexes;
 	std::recursive_mutex mtx;
 };

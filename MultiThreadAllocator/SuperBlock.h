@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cmath>
@@ -10,14 +11,12 @@ class Heap;
 
 class SuperBlock;
 
-struct StoreInfo {
-	StoreInfo(SuperBlock* _owner = nullptr) : owner(_owner) {}
-	~StoreInfo() = default;
-	SuperBlock* owner;
-};
+static void SetSbckOwner(void* sbck, SuperBlock *owner) {
+	((SuperBlock **)sbck)[-1] = owner;
+}
 
-const size_t SuperBlockSize = (size_t) pow(2, 14); // size of superblock in bytes
-const size_t AdditionalSize = sizeof(StoreInfo);
+static const size_t SuperBlockSize = (size_t)pow(2, 14); // size of superblock in bytes
+static const size_t AdditionalSize = sizeof(void*);
 
 class SuperBlock {
 public:
@@ -32,17 +31,15 @@ public:
 		markupMemory();
 	}
 
-	~SuperBlock() 
+	~SuperBlock()
 	{
 		assert(freeBlocks.size() == nBlocks);
 		free(begin);
 	}
 
-	void* SbMalloc(size_t bytes)
+	void* SbMalloc()
 	{
-		assert(bytes <= blockSize);
 		assert(usedSize + blockSize <= SuperBlockSize);
-
 		usedSize += blockSize;
 		void* ptr = freeBlocks.back();
 		freeBlocks.pop_back();
@@ -59,16 +56,16 @@ public:
 
 	size_t usedSize;
 	const size_t blockSize;
-	Heap* owner;
+	std::atomic<Heap*> owner;
 private:
+
 	void markupMemory()
 	{
-		char* temp = begin + SuperBlockSize + AdditionalSize;
-		StoreInfo info(this);
-		for (size_t i = 0; i < nBlocks; i++) {
-			temp -= blockSize;
-			memcpy(temp - AdditionalSize, &info, AdditionalSize);
-			freeBlocks.push_back(temp);
+		freeBlocks.reserve(nBlocks);
+		for (size_t i = nBlocks; i > 0; i--) {
+			char* ptr = begin + AdditionalSize + (i - 1) * blockSize;
+			freeBlocks.push_back(ptr);
+			SetSbckOwner(ptr, this);
 		}
 		assert(freeBlocks.size() == nBlocks);
 	}
@@ -77,3 +74,4 @@ private:
 	std::vector<void*> freeBlocks;
 	const size_t nBlocks;
 };
+
