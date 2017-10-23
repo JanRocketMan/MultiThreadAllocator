@@ -1,25 +1,20 @@
 #pragma once
 #include "SuperBlock.h"
 #include "Heap.h"
-#include <cassert>
 #include <cstring>
 #include <thread>
-#include <list>
-#include <memory>
-#include <mutex>
-#include <vector>
 
 void* ReserveMemoryForBigBlock(size_t bytes)
 {
 	char* ptr = (char*)(malloc(bytes));
-	SuperBlock::StoreInfo info(nullptr);
-	memcpy(ptr, &info, sizeof(SuperBlock::StoreInfo));
-	return (void*)(ptr + sizeof(SuperBlock::StoreInfo));
+	StoreInfo info(nullptr);
+	memcpy(ptr, &info, AdditionalSize);
+	return (void*)(ptr + AdditionalSize);
 }
 
 void FreeMemoryForBigBlock(void* ptr)
 {
-	free((char*)ptr - sizeof(SuperBlock::StoreInfo));
+	free((char*)ptr - AdditionalSize);
 }
 
 class HoardAllocator {
@@ -42,7 +37,7 @@ public:
 
 	void* mtalloc(size_t bytes)
 	{
-		bytes += sizeof(SuperBlock::StoreInfo);
+		bytes += AdditionalSize;
 		if (bytes > SuperBlockSize / 2) {
 			return ReserveMemoryForBigBlock(bytes);
 		}

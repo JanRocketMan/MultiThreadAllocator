@@ -1,38 +1,41 @@
 #pragma once
 #include <cassert>
+#include <cstddef>
 #include <cmath>
+#include <memory>
 #include <vector>
 
+using std::size_t;
 class Heap;
 
-const size_t SuperBlockSize = (int) pow(2, 14); // size in Bytes
+class SuperBlock;
+
+struct StoreInfo {
+	StoreInfo(SuperBlock* _owner = nullptr) : owner(_owner) {}
+	~StoreInfo() = default;
+	SuperBlock* owner;
+};
+
+const size_t SuperBlockSize = (size_t) pow(2, 14); // size of superblock in bytes
+const size_t AdditionalSize = sizeof(StoreInfo);
 
 class SuperBlock {
 public:
-	struct StoreInfo {
-		StoreInfo() = default;
-		StoreInfo(SuperBlock* _owner) : owner(_owner) {}
-		~StoreInfo() = default;
-		SuperBlock* owner;
-	};
+
+	SuperBlock() = delete;
 
 	SuperBlock(size_t _blockSize, Heap* owner) :
 		usedSize(0), blockSize(_blockSize), owner(owner),
 		nBlocks((size_t)floor((float)SuperBlockSize / (float)blockSize))
 	{
 		begin = (char*)malloc(SuperBlockSize);
-		next = nullptr;
-		prev = nullptr;
 		markupMemory();
 	}
 
-	~SuperBlock() {
-		free(begin);
-	}
-
-	void ChangeOwner(Heap* newOwner)
+	~SuperBlock() 
 	{
-		owner = newOwner;
+		assert(freeBlocks.size() == nBlocks);
+		free(begin);
 	}
 
 	void* SbMalloc(size_t bytes)
@@ -41,8 +44,8 @@ public:
 		assert(usedSize + blockSize <= SuperBlockSize);
 
 		usedSize += blockSize;
-		void* ptr = freeblocks.back();
-		freeblocks.pop_back();
+		void* ptr = freeBlocks.back();
+		freeBlocks.pop_back();
 
 		return ptr;
 	}
@@ -50,29 +53,27 @@ public:
 	void SbFree(void* ptr)
 	{
 		assert(usedSize >= blockSize);
-		freeblocks.push_back(ptr);
+		freeBlocks.push_back(ptr);
 		usedSize -= blockSize;
 	}
 
 	size_t usedSize;
 	const size_t blockSize;
 	Heap* owner;
-	SuperBlock* next;
-	SuperBlock* prev;
 private:
 	void markupMemory()
 	{
-		char* temp = begin + SuperBlockSize + sizeof(StoreInfo);
+		char* temp = begin + SuperBlockSize + AdditionalSize;
 		StoreInfo info(this);
 		for (size_t i = 0; i < nBlocks; i++) {
 			temp -= blockSize;
-			memcpy(temp - sizeof(StoreInfo), &info, sizeof(StoreInfo));
-			freeblocks.push_back(temp);
+			memcpy(temp - AdditionalSize, &info, AdditionalSize);
+			freeBlocks.push_back(temp);
 		}
-		assert(freeblocks.size() == nBlocks);
+		assert(freeBlocks.size() == nBlocks);
 	}
 
 	char* begin;
-	std::vector<void*> freeblocks;
+	std::vector<void*> freeBlocks;
 	const size_t nBlocks;
 };

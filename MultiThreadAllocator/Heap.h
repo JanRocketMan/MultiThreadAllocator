@@ -1,25 +1,22 @@
 #pragma once
 #include "Bin.h"
-#include <array>
+#include <numeric>
 #include <mutex>
 
-const float f = 0.5;
 const size_t K = 5;
 const size_t Nbins = 11;
 
 SuperBlock* GetOwnerOfBlock(void* ptr)
 {
-	SuperBlock::StoreInfo info;
-	memcpy(&info, (char*)ptr - sizeof(SuperBlock::StoreInfo), sizeof(SuperBlock::StoreInfo));
+	StoreInfo info;
+	memcpy(&info, (char*)ptr - AdditionalSize, AdditionalSize);
 	return info.owner;
 }
 
 class Heap {
 public:
-	Heap() : usedSize(0), allocatedSize(0), emptyBlock(nullptr) {}
-	~Heap() {
-		clearEmpty();
-	}
+	Heap() : usedSize(0), allocatedSize(0) {}
+	~Heap() = default;
 
 	void* HeapMalloc(size_t bytes, Heap* zeroHeap)
 	{
@@ -29,27 +26,21 @@ public:
 
 		assert(this != zeroHeap);
 
-		SuperBlock* newSbck = Bins[currindex].getFirstForMalloc();
+		SuperBlock* newSbck = Bins[currindex].GetBlock();
 
 		if (newSbck == nullptr) {
-			if (emptyBlock != nullptr) {
-				newSbck = popfromempty();
+			newSbck = zeroHeap->SendBlock(currindex, this);
+			if (newSbck != nullptr) {
+				usedSize += newSbck->usedSize;
 			}
 			else {
-				newSbck = zeroHeap->SendBlock(currindex, this);
-				if (newSbck != nullptr) {
-					usedSize += newSbck->usedSize;
-				}
-				else {
-					newSbck = new SuperBlock(size(currindex), this);
-				}
-				newSbck->owner = this;
-				allocatedSize += SuperBlockSize;
+				newSbck = new SuperBlock(size(currindex), this);
 			}
-			newSbck->ChangeBlockSize(size(currindex));
-			Bins[currindex].push(newSbck, true);
+			newSbck->owner = this;
+			allocatedSize += SuperBlockSize;
 		}
 
+		Bins[currindex].AddBlock(newSbck, true);
 		usedSize += size(currindex);
 		ptr = newSbck->SbMalloc(bytes);
 
@@ -58,8 +49,8 @@ public:
 
 	bool HeapFree(void* ptr, Heap* zeroHeap)
 	{
-		SuperBlock* block = GetOwnerOfBlock(ptr);
 		std::unique_lock<std::recursive_mutex> lock(mtx);
+		SuperBlock* block = GetOwnerOfBlock(ptr);
 		if (block->owner != this) {
 			return false;
 		}
@@ -67,33 +58,22 @@ public:
 		usedSize -= block->blockSize;
 		assert(usedSize >= 0);
 		block->SbFree(ptr);
-		SuperBlock* res = Bins[currindex].update(block);
-		if (res != nullptr) {
-			pushtoempty(res);
-		}
+		Bins[currindex].UpdateBlockAfterFree(block);
 
 		if ((usedSize + K * SuperBlockSize < allocatedSize) && (usedSize < (size_t)((float)(1 - f)*allocatedSize))) {
-			SuperBlock* to_send = SendBlock(currindex, zeroHeap);
+			size_t i = 0;
+			SuperBlock* to_send = SendSomeBlock(zeroHeap, &i);
 			assert(to_send != nullptr);
-			zeroHeap->ReceiveBlock(to_send, currindex);
+			zeroHeap->ReceiveBlock(to_send, i);
 		}
 
 		return true;
 	}
 
-	SuperBlock* SendBlock(size_t binIndex, Heap* where) {
+	SuperBlock* SendBlock(size_t binIndex, Heap* where) 
+	{
 		std::unique_lock<std::recursive_mutex> lock(mtx);
-		SuperBlock* ans = nullptr;
-		ans = popfromempty();
-		if (ans == nullptr) {
-			ans = Bins[binIndex].pop(2);
-			if (ans == nullptr) {
-				ans = Bins[binIndex].pop(1);
-				if (ans == nullptr) {
-					ans = Bins[binIndex].pop(0);
-				}
-			}
-		}
+		SuperBlock* ans = Bins[binIndex].GetBlock();
 		if (ans != nullptr) {
 			usedSize -= ans->usedSize;
 			allocatedSize -= SuperBlockSize;
@@ -102,14 +82,29 @@ public:
 		return ans;
 	}
 
+	SuperBlock* SendSomeBlock(Heap* where, size_t* index)
+	{
+		SuperBlock* to_send = nullptr;
+		std::array<size_t, Nbins> randomIndexes;
+		std::iota(randomIndexes.begin(), randomIndexes.end(), 0);
+		std::random_shuffle(randomIndexes.begin(), randomIndexes.end());
+		for (size_t k = 0; k < Nbins; k++) {
+			to_send = Bins[randomIndexes[k]].GetBlock(0);
+			if (to_send != nullptr) {
+				*index = randomIndexes[k];
+				break;
+			}
+		}
+		assert(to_send != nullptr);
+		to_send->owner = where;
+		usedSize -= to_send->usedSize;
+		allocatedSize -= SuperBlockSize;
+		return to_send;
+	}
+
 	void ReceiveBlock(SuperBlock* newblock, size_t binIndex) {
 		std::unique_lock<std::recursive_mutex> lock(mtx);
-		if (newblock->usedSize != 0) {
-			Bins[binIndex].push(newblock, false);
-		}
-		else {
-			pushtoempty(newblock);
-		}
+		Bins[binIndex].AddBlock(newblock, false);
 
 		usedSize += newblock->usedSize;
 		allocatedSize += SuperBlockSize;
@@ -118,44 +113,9 @@ public:
 
 private:
 
-	void clearEmpty() {
-		SuperBlock* temp = emptyBlock;
-		assert(temp == nullptr || temp->prev == nullptr);
-		SuperBlock* temp2 = nullptr;
-		while (temp != nullptr) {
-			temp2 = temp->next;
-			assert(temp2 != temp);
-			delete temp;
-			temp = temp2;
-		}
-	}
-
-	void pushtoempty(SuperBlock* newblock) {
-		if (emptyBlock != nullptr) {
-			assert(emptyBlock->prev == nullptr);
-			emptyBlock->prev = newblock;
-		}
-		assert(newblock->prev == nullptr && newblock->next == nullptr);
-		newblock->next = emptyBlock;
-		emptyBlock = newblock;
-	}
-
-	SuperBlock* popfromempty() {
-		SuperBlock* ans = emptyBlock;
-		if (ans != nullptr) {
-			emptyBlock = ans->next;
-			ans->next = nullptr;
-			ans->prev = nullptr;
-			if (emptyBlock != nullptr) {
-				emptyBlock->prev = nullptr;
-			}
-		}
-		return ans;
-	}
-
-	size_t index(int bytes)
+	size_t index(size_t bytes)
 	{
-		assert(bytes > sizeof(SuperBlock::StoreInfo));
+		assert(bytes > AdditionalSize);
 		return (size_t) ceil(log2(bytes) - 3);
 	}
 
@@ -166,7 +126,6 @@ private:
 	}
 
 	std::array<Bin, Nbins> Bins;
-	SuperBlock* emptyBlock;
 
 	size_t usedSize;
 	size_t allocatedSize;

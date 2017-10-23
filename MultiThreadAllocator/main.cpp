@@ -6,8 +6,8 @@
 int main() {
 	clock_t time = clock();
 	size_t threadsCount = 1;
-	size_t numIterations = 4;
-	size_t items = 100000;
+	size_t numIterations = 10;
+	size_t items = 10000;
 	//unsigned rand_state = 60;
 	TestOptions t(threadsCount, numIterations, items);
 	showResults(t);
